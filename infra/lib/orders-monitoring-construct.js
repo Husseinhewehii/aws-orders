@@ -34,6 +34,17 @@ class OrdersMonitoringConstruct extends Construct {
         });
         processFnErrorsAlarm.addAlarmAction(new cw_actions.SnsAction(alertsTopic));
 
+        // Alarm: ProcessOrderFn throttles (overload)
+        const processFnThrottlesAlarm = new cw.Alarm(this, 'ProcessOrderFnThrottlesAlarm', {
+            metric: processFn.metricThrottles(),
+            evaluationPeriods: 1,
+            threshold: 1,
+            comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            alarmDescription: 'ProcessOrderFn is being throttled (overloaded).',
+        });
+        processFnThrottlesAlarm.addAlarmAction(new cw_actions.SnsAction(alertsTopic));
+
+
         // 5) Alarms (wired to SNS)
         const queueAgeAlarm = new cw.Alarm(stack, 'OrdersQueueOldestMessageAlarm', {
             metric: queue.metricApproximateAgeOfOldestMessage(),

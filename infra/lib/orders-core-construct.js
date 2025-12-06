@@ -54,9 +54,13 @@ class OrdersCoreConstruct extends Construct {
             environment: {
                 TABLE_NAME: table.tableName,
             },
-            bundling: { minify: true },
+            bundling: { minify: true }
         });
-        processFn.addEventSource(new sources.SqsEventSource(queue, { batchSize: 10 }));
+        processFn.addEventSource(new sources.SqsEventSource(queue, {
+            batchSize: 10,
+            maxConcurrency: 2,
+        }));
+
         table.grantReadWriteData(processFn);
         queue.grantConsumeMessages(processFn);
 
