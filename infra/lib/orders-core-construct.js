@@ -1,4 +1,3 @@
-// infra/lib/orders-core-construct.js
 const cdk = require('aws-cdk-lib');
 const { Construct } = require('constructs');
 const dynamodb = require('aws-cdk-lib/aws-dynamodb');
@@ -8,6 +7,7 @@ const lambdaNode = require('aws-cdk-lib/aws-lambda-nodejs');
 const lambda = require('aws-cdk-lib/aws-lambda');
 const sqs = require('aws-cdk-lib/aws-sqs');
 const sources = require('aws-cdk-lib/aws-lambda-event-sources');
+
 
 class OrdersCoreConstruct extends Construct {
     constructor(scope, id, props = {}) {
@@ -44,6 +44,7 @@ class OrdersCoreConstruct extends Construct {
                 QUEUE_URL: queue.queueUrl,
             },
             bundling: { minify: true },
+            tracing: lambda.Tracing.ACTIVE
         });
         queue.grantSendMessages(createFn);
 
@@ -54,7 +55,8 @@ class OrdersCoreConstruct extends Construct {
             environment: {
                 TABLE_NAME: table.tableName,
             },
-            bundling: { minify: true }
+            bundling: { minify: true },
+            tracing: lambda.Tracing.ACTIVE
         });
         processFn.addEventSource(new sources.SqsEventSource(queue, {
             batchSize: 10,
@@ -72,6 +74,7 @@ class OrdersCoreConstruct extends Construct {
                 TABLE_NAME: table.tableName,
             },
             bundling: { minify: true },
+            tracing: lambda.Tracing.ACTIVE
         });
         table.grantReadData(getFn);
 
