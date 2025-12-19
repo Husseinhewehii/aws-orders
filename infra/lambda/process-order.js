@@ -5,6 +5,7 @@ const { log } = require('./logger');
 const ddb = new DynamoDBClient();
 const docClient = DynamoDBDocumentClient.from(ddb);
 const TABLE_NAME = process.env.TABLE_NAME;
+const AWSXRay = require('aws-xray-sdk-core');
 
 function parseRecordBody(record) {
     if (!record.body) return {};
@@ -67,6 +68,13 @@ exports.handler = async (event, context) => {
 
         const orderId = getOrderId(body, record);
         const correlationId = getCorrelationId(body, record, requestId);
+
+        const segment = AWSXRay.getSegment();
+        if (segment) {
+            segment.addAnnotation('orderId', orderId);
+            segment.addAnnotation('correlationId', correlationId);
+        }
+
 
         log('INFO', 'Processing single order message', {
             functionName,
