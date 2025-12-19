@@ -10,11 +10,16 @@ The project implements a **decoupled, event-driven architecture** that demonstra
 
 ### Core Components
 
-1. **API Gateway** - HTTP API for order management
-2. **Lambda Functions** - Serverless compute for business logic
-3. **SQS Queues** - Message queuing with dead letter queue (DLQ)
-4. **DynamoDB** - NoSQL database for order persistence
-5. **CloudWatch** - Monitoring and alerting
+1. **Amazon API Gateway (HTTP API)** - Public HTTP API for order management
+2. **AWS Lambda** - Serverless compute for business logic
+3. **Amazon SQS** - Message queuing with dead letter queue (DLQ)
+4. **Amazon DynamoDB** - NoSQL database for order persistence
+5. **Amazon CloudWatch** - Monitoring (alarms, dashboards) and logs
+6. **Amazon SNS** - Alert notifications via email
+7. **AWS X-Ray** - Tracing enabled for Lambda functions
+8. **AWS IAM** - Security and permissions (Lambda roles and policies)
+9. **Amazon S3** - CDK asset storage and bootstrap bucket
+10. **AWS CDK** - Infrastructure as Code framework
 
 ### Data Flow
 
@@ -26,21 +31,83 @@ GET /orders/{id} → Get Lambda → DynamoDB
 ### Architecture Diagram
 
 ```
-┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Client    │───▶│ API Gateway  │───▶│ Lambda      │───▶│ SQS Queue   │
-└─────────────┘    └──────────────┘    │ (Create)    │    └─────────────┘
-                                       └─────────────┘           │
-                                                                ▼
-┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Client    │◀───│ API Gateway  │◀───│ Lambda      │◀───│ Lambda      │
-└─────────────┘    └──────────────┘    │ (Get)       │    │ (Process)   │
-                                       └─────────────┘    └─────────────┘
-                                                               │
-                                                               ▼
-                                                       ┌─────────────┐
-                                                       │ DynamoDB    │
-                                                       │ Table       │
-                                                       └─────────────┘
+                              ┌───────────────┐
+│    Client     │
+│ (browser/app) │
+└───────┬───────┘
+        │  HTTPS (REST-like calls)
+        ▼
+┌──────────────────────────┐
+│ API Gateway (HTTP API)   │
+│  Routes:                 │
+│   POST /orders           │
+│   GET  /orders/{id}      │
+└───────────┬──────────────┘
+            │ Lambda proxy integration
+            │
+     ┌──────▼──────────┐                 ┌─────────────────────┐
+     │ Lambda: Create  │  SendMessage    │     SQS Queue        │
+     │ (POST /orders)  ├────────────────▶│    OrdersQueue       │
+     └──────┬──────────┘                 └─────────┬───────────┘
+            │ 202 Accepted                          │ Event source mapping
+            │                                      ▼
+            │                            ┌─────────────────────┐
+            │                            │ Lambda: Process     │
+            │                            │ (SQS worker)        │
+            │                            └─────────┬───────────┘
+            │                                      │ Put/Update (idempotent)
+            ▼                                      ▼
+     ┌──────────────────┐                 ┌─────────────────────┐
+     │ Lambda: Get       │  GetItem       │ DynamoDB OrdersTable │
+     │ (GET /orders/{id})├────────────────▶│  PK/SK ORDER#...     │
+     └─────────┬─────────┘                └─────────────────────┘
+               │
+               ▼
+          Response 200/404
+
+Failures / retries:
+┌─────────────────────┐        after maxReceiveCount        ┌──────────────────┐
+│     SQS Queue        │────────────────────────────────────▶│     SQS DLQ      │
+│    OrdersQueue       │                                     │    OrdersDlq     │
+└─────────────────────┘                                     └──────────────────┘
+
+
+
+
+Observability:
+CloudWatch Logs + Metrics + Alarms + Dashboard + X-Ray (Lambdas)
+Alarms → SNS Topic → Email
+
+
+                                ┌────────────────────────────────────────────────────────┐
+                                │                      Observability                      │
+                                │  CloudWatch Logs: Lambda log groups (retention)         │
+                                │  CloudWatch Alarms:                                     │
+                                │    - Lambda Errors / Throttles                          │
+                                │    - SQS Oldest Message Age                              │
+                                │    - DLQ Messages Visible                                │
+                                │  CloudWatch Dashboard: key metrics                      │
+                                │  X-Ray: Lambda tracing (Active)                         │
+                                └────────────────────────────────────────────────────────┘
+                                                       │
+                                                       │ Alarm actions
+                                                       ▼
+                                          ┌──────────────────────────────┐
+                                          │             SNS              │
+                                          │       Alerts Topic           │
+                                          └──────────────────────────────┘
+                                                       │
+                                                       │ Email subscription
+                                                       ▼
+                                          ┌──────────────────────────────┐
+                                          │         Email Inbox          │
+                                          └──────────────────────────────┘
+
+Notes:
+- Clients call API Gateway only; API Gateway invokes Lambdas via proxy integrations.
+- IAM roles/policies grant least-privilege access to Lambdas (SQS, DynamoDB, Logs, X-Ray).
+- SQS has a Dead Letter Queue (DLQ) for messages that fail after configured retries.
+- API integration uses Lambda proxy integrations (payload format 2.0).
 ```
 
 ## 🎓 Learning Objectives
@@ -49,12 +116,16 @@ This project covers essential AWS services and concepts:
 
 ### AWS Services Practiced
 - **AWS CDK** - Infrastructure as Code
-- **API Gateway** - HTTP API management
-- **Lambda** - Serverless compute
-- **SQS** - Message queuing with DLQ patterns
-- **DynamoDB** - Single-table design
-- **CloudWatch** - Monitoring and alarms
-- **IAM** - Security and permissions
+- **Amazon API Gateway (HTTP API)** - HTTP API management
+- **AWS Lambda** - Serverless compute (with event source mapping for SQS)
+- **Amazon SQS** - Message queuing and Dead Letter Queue (DLQ)
+- **Amazon DynamoDB** - Single-table design
+- **Amazon CloudWatch** - Alarms and dashboards
+- **Amazon CloudWatch Logs** - Lambda log groups and retention
+- **Amazon SNS** - Email notifications for alarms
+- **AWS X-Ray** - Distributed tracing for Lambda
+- **AWS IAM** - Roles and policies for least privilege
+- **Amazon S3** - CDK asset and bootstrap bucket
 
 ### Key Concepts Demonstrated
 - **Event-driven architecture**
@@ -62,27 +133,7 @@ This project covers essential AWS services and concepts:
 - **Error handling and retry patterns**
 - **Idempotency in distributed systems**
 - **Infrastructure as Code best practices**
-- **Monitoring and observability**
-
-## 📁 Project Structure
-
-```
-infra/
-├── bin/
-│   ├── aws-orders.js          # CDK app entry point
-│   └── infra.js               # Legacy CDK app
-├── lib/
-│   ├── aws-orders-stack.js    # Main application stack
-│   ├── orders-api-stack.js    # API and Lambda functions
-│   └── infra-stack.js         # Legacy stack
-├── lambda/
-│   ├── create-order.js        # Order creation handler
-│   ├── get-order.js          # Order retrieval handler
-│   └── process-order.js      # SQS message processor
-├── test/
-│   └── infra.test.js         # Unit tests
-└── cdk.json                  # CDK configuration
-```
+- **Monitoring, logging, and observability**
 
 ## 🚀 Getting Started
 
@@ -94,7 +145,7 @@ infra/
 
 ### Installation
 
-1. **Clone and navigate to the project:**
+1. **Install infra dependencies:**
    ```bash
    cd infra
    npm install
@@ -192,11 +243,15 @@ curl https://your-api-id.execute-api.region.amazonaws.com/orders/uuid-generated-
 - Sort Key: `SK` (e.g., `ORDER#uuid`)
 - Attributes: `amount`, `currency`, `createdAt`
 
-### Error Handling
+### Error Handling & Monitoring
 
-- **Dead Letter Queue**: Failed messages after 5 retries
-- **Idempotency**: Conditional writes prevent duplicates
-- **Monitoring**: CloudWatch alarms for queue age and DLQ messages
+- **Dead Letter Queue (DLQ):** Failed messages after 5 retries
+- **Idempotency:** Conditional writes prevent duplicates
+- **Monitoring:** CloudWatch alarms (Lambda errors/throttles, SQS age and DLQ messages)
+- **Dashboard:** CloudWatch dashboard for key metrics
+- **Alerts:** SNS email notifications on alarms
+- **Tracing:** AWS X-Ray enabled for Lambdas
+- **Logging:** CloudWatch log groups with retention
 
 ## 🧪 Testing
 
@@ -205,31 +260,21 @@ Run the test suite:
 npm test
 ```
 
-## 🛠️ Development Commands
-
-| Command | Description |
-|---------|-------------|
-| `npm run test` | Run Jest unit tests |
-| `npx cdk deploy` | Deploy stack to AWS |
-| `npx cdk diff` | Compare with deployed stack |
-| `npx cdk synth` | Generate CloudFormation template |
-| `npx cdk destroy` | Remove all resources |
-
 ## 🔧 Customization
 
 ### Adding New Features
 
 1. **New Lambda Function:**
-   - Add to `lambda/` directory
-   - Create CDK construct in `orders-api-stack.js`
+   - Add to `infra/lambda/` directory
+   - Create CDK construct or resource in `infra/lib/orders-api-stack.js`
    - Add API route if needed
 
 2. **New Database Table:**
-   - Add DynamoDB table in `orders-api-stack.js`
+   - Add a DynamoDB table in `orders-api-stack.js`
    - Grant appropriate permissions to Lambda functions
 
 3. **New Monitoring:**
-   - Add CloudWatch alarms in the stack
+   - Add CloudWatch alarms to the stack
    - Configure log groups and retention policies
 
 ## 🧹 Cleanup
@@ -238,13 +283,6 @@ To remove all resources and avoid charges:
 ```bash
 npx cdk destroy --all
 ```
-
-## 📚 Learning Resources
-
-- [AWS CDK Developer Guide](https://docs.aws.amazon.com/cdk/latest/guide/)
-- [Lambda Best Practices](https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html)
-- [DynamoDB Single-Table Design](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-general-nosql-design.html)
-- [SQS Dead Letter Queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
 
 ## 🎯 Training Goals Achieved
 
