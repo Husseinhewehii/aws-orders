@@ -31,10 +31,10 @@ GET /orders/{id} → Get Lambda → DynamoDB
 ### Architecture Diagram
 
 ```
-                              ┌───────────────┐
-│    Client     │
-│ (browser/app) │
-└───────┬───────┘
+┌───────────────────┐                              
+│      Client       │
+│ (browser/app/cli) │
+└───────┬───────────┘
         │  HTTPS (REST-like calls)
         ▼
 ┌──────────────────────────┐
